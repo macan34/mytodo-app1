@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyTodo Collaborative</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    body { font-family:"Segoe UI",sans-serif; background:#f1f5f9; margin:0; }
+    header { background:#2563eb; color:white; padding:1rem; text-align:center; font-size:1.4rem; font-weight:bold; }
+    .container { max-width:700px; margin:1.5rem auto; background:white; border-radius:14px; padding:1.5rem; box-shadow:0 6px 16px rgba(0,0,0,0.1); }
+    input,select,button{width:100%;padding:.7rem;margin:.4rem 0;border-radius:8px;border:1px solid #cbd5e1;font-size:1rem;}
+    button{background:#2563eb;color:white;border:none;font-weight:bold;cursor:pointer;}
+    button:hover{background:#1d4ed8;}
+    .hidden{display:none;}
+    .task{background:#f9fafb;padding:.8rem;border-radius:10px;margin:.6rem 0;box-shadow:0 1px 4px rgba(0,0,0,0.05);}
+    .task.open{background:#eef2ff;}
+    .done{text-decoration:line-through;color:gray;}
+    .member-status{font-size:.85rem;color:#555;margin-top:6px;}
+    .comment-box{margin-top:8px;}
+    .comment{margin:4px 0;padding:6px 8px;background:#fff;border-radius:6px;font-size:.9rem;border:1px solid #e5e7eb;}
+    .comment img{max-width:120px;border-radius:6px;margin-top:4px;}
+    .room-history{margin-top:1rem;padding:.5rem;border:1px solid #ddd;border-radius:8px;background:#f9fafb;}
+    .room-item{padding:.4rem .6rem;margin:.3rem 0;background:#eef2ff;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+    .room-item span{flex:1;}
+    .del-btn{background:#ef4444;border:none;color:white;padding:2px 6px;margin-left:6px;border-radius:4px;cursor:pointer;}
+    .del-btn:hover{background:#dc2626;}
+
+    /* Mobile Friendly */
+    @media (max-width:600px){
+      .container{width:95%;margin:0.5rem auto;padding:1rem;}
+      header{font-size:1.2rem;padding:0.8rem;}
+      input,select,button{font-size:0.9rem;padding:0.6rem;}
+      .task{padding:0.6rem;}
+    }
+  </style>
+</head>
+<body>
+<header>📋 MyTodo Collaborative</header>
+
+<!-- REGISTER -->
+<div class="container" id="registerBox">
+  <h3>Daftar Akun</h3>
+  <input id="regName" placeholder="Username">
+  <input id="regEmail" placeholder="Email">
+  <input id="regPass" type="password" placeholder="Password">
+  <select id="regRole">
+    <option value="member">Member</option>
+    <option value="admin">Admin</option>
+  </select>
+  <button onclick="register()">Daftar</button>
+  <div>Sudah punya akun? <span style="color:#2563eb;cursor:pointer;" onclick="showLogin()">Login</span></div>
+</div>
+
+<!-- LOGIN -->
+<div class="container hidden" id="loginBox">
+  <h3>Login</h3>
+  <input id="loginEmail" placeholder="Email">
+  <input id="loginPass" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <div>Belum punya akun? <span style="color:#2563eb;cursor:pointer;" onclick="showRegister()">Daftar</span></div>
+</div>
+
+<!-- ROOM -->
+<div class="container hidden" id="roomBox">
+  <h3>Masuk Room</h3>
+  <p id="welcomeUser"></p>
+  <input id="roomCodeInput" placeholder="Kode Room (kosongkan jika Create)">
+  <button onclick="createRoom()">Create Room</button>
+  <button onclick="joinRoom()">Join Room</button>
+  <button onclick="logout()">Logout</button>
+
+  <div class="room-history">
+    <h4>📌 Daftar Room</h4>
+    <div id="roomHistory"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="container hidden" id="appScreen">
+  <h3 id="roomInfo"></h3>
+  <div id="taskSection">
+    <h4>Daftar Tugas</h4>
+    <div id="taskList"></div>
+    <div id="newTaskBox" class="hidden">
+      <input id="taskInput" placeholder="Tugas baru">
+      <select id="assignSelect" multiple></select>
+      <button onclick="addTask()">Tambah Tugas</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---------------- LOGIN SYSTEM ----------------
+  function showLogin(){registerBox.classList.add("hidden");loginBox.classList.remove("hidden");}
+  function showRegister(){loginBox.classList.add("hidden");registerBox.classList.remove("hidden");}
+  function showRoom(){loginBox.classList.add("hidden");registerBox.classList.add("hidden");roomBox.classList.remove("hidden");renderHistory();}
+
+  function register(){
+    const name=regName.value.trim(), email=regEmail.value.trim(), pass=regPass.value, role=regRole.value;
+    if(!name||!email||!pass) return alert("Lengkapi semua field!");
+    let users=JSON.parse(localStorage.getItem("users")||"[]");
+    if(users.some(u=>u.email===email)) return alert("Email sudah terdaftar!");
+    users.push({name,email,pass,role});
+    localStorage.setItem("users",JSON.stringify(users));
+    alert("Pendaftaran berhasil, silakan login."); showLogin();
+  }
+
+  function login(){
+    const email=loginEmail.value.trim(), pass=loginPass.value;
+    let users=JSON.parse(localStorage.getItem("users")||"[]");
+    const user=users.find(u=>u.email===email && u.pass===pass);
+    if(!user) return alert("Email / password salah!");
+    localStorage.setItem("sessionUser",JSON.stringify(user));
+    welcomeUser.textContent=`Login sebagai ${user.name} (${user.role})`;
+    showRoom();
+  }
+
+  function logout(){
+    localStorage.removeItem("sessionUser");
+    appScreen.classList.add("hidden"); roomBox.classList.add("hidden"); showLogin();
+  }
+
+  window.onload=()=>{const user=JSON.parse(localStorage.getItem("sessionUser"));if(user){welcomeUser.textContent=`Login sebagai ${user.name} (${user.role})`; showRoom();} else showLogin();};
+
+  // ---------------- ROOM & TASK SYSTEM ----------------
+  let peer, currentRoom=null, currentUser="", currentRole="member";
+  let connections=[], tasks=[], taskStatus={}, comments={}, members=[];
+
+  function saveHistory(roomCode){
+    const user=JSON.parse(localStorage.getItem("sessionUser")); if(!user) return;
+    let history=JSON.parse(localStorage.getItem("roomHistory_"+user.email)||"[]");
+    if(!history.includes(roomCode)) history.push(roomCode);
+    localStorage.setItem("roomHistory_"+user.email,JSON.stringify(history));
+    renderHistory();
+  }
+
+  function renderHistory(){
+    const user=JSON.parse(localStorage.getItem("sessionUser")); if(!user) return;
+    let history=JSON.parse(localStorage.getItem("roomHistory_"+user.email)||"[]");
+    roomHistory.innerHTML="";
+    if(history.length===0){ roomHistory.innerHTML="<i>Belum ada room</i>"; return; }
+    history.forEach(code=>{
+      const div=document.createElement("div");
+      div.className="room-item";
+      div.innerHTML=`<span onclick="quickJoin('${code}')">${code}</span> <button class="del-btn" onclick="deleteHistory('${code}')">❌</button>`;
+      roomHistory.appendChild(div);
+    });
+  }
+
+  function deleteHistory(code){
+    const user=JSON.parse(localStorage.getItem("sessionUser")); if(!user) return;
+    let history=JSON.parse(localStorage.getItem("roomHistory_"+user.email)||"[]");
+    history=history.filter(c=>c!==code);
+    localStorage.setItem("roomHistory_"+user.email,JSON.stringify(history));
+    renderHistory();
+  }
+
+  function quickJoin(code){
+    const user=JSON.parse(localStorage.getItem("sessionUser"));
+    currentUser=user.name; currentRole=user.role;
+    peer=new Peer({host:"my-peer-server.herokuapp.com",port:443,secure:true});
+    peer.on("open",()=>{const conn=peer.connect(code);
+      conn.on("open",()=>{connections=[conn]; showApp(code); conn.send({type:"join",user:currentUser,role:currentRole}); saveHistory(code);});
+      conn.on("data",handleData);});
+  }
+
+  function createRoom(){
+    const user=JSON.parse(localStorage.getItem("sessionUser"));
+    currentUser=user.name; currentRole=user.role;
+    peer=new Peer({host:"my-peer-server.herokuapp.com",port:443,secure:true});
+    peer.on("open",id=>{currentRoom=id; showApp(id); saveHistory(id); members=[{name:currentUser,role:currentRole}]; renderAssignSelect();});
+    peer.on("connection",conn=>{
+      connections.push(conn); conn.on("data",handleData);
+      conn.on("open",()=>{conn.send({type:"init",tasks,taskStatus,comments,members});});
+    });
+  }
+
+  function joinRoom(){
+    const user=JSON.parse(localStorage.getItem("sessionUser"));
+    currentUser=user.name; currentRole=user.role;
+    const code=roomCodeInput.value.trim(); if(!code) return alert("Isi kode room!");
+    peer=new Peer({host:"my-peer-server.herokuapp.com",port:443,secure:true});
+    peer.on("open",()=>{const conn=peer.connect(code);
+      conn.on("open",()=>{connections=[conn]; showApp(code); conn.send({type:"join",user:currentUser,role:currentRole}); saveHistory(code);});
+      conn.on("data",handleData);});
+  }
+
+  function showApp(code){
+    roomBox.classList.add("hidden"); appScreen.classList.remove("hidden");
+    roomInfo.textContent=`Room: ${code||currentRoom} | ${currentUser} (${currentRole})`;
+    if(currentRole==="admin") newTaskBox.classList.remove("hidden");
+  }
+
+  function renderAssignSelect(){
+    assignSelect.innerHTML="";
+    members.forEach(m=>{
+      if(m.role==="member"){let opt=document.createElement("option"); opt.value=m.name; opt.textContent=m.name; assignSelect.appendChild(opt);}
+    });
+  }
+
+  function addTask(){
+    const text=taskInput.value.trim(); if(!text) return;
+    const assigned=[...assignSelect.selectedOptions].map(o=>o.value);
+    tasks.push({text,assigned});  
+    const idx=tasks.length-1;
+    taskStatus[idx]={}; comments[idx]=[];
+    broadcast({type:"task",tasks,taskStatus,comments}); renderTasks(); taskInput.value="";
+  }
+
+  function deleteTask(i){
+    tasks.splice(i,1); delete taskStatus[i]; delete comments[i];
+    broadcast({type:"task",tasks,taskStatus,comments}); renderTasks();
+  }
+
+  function toggleCheck(i,checked){ broadcast({type:"check",index:i,user:currentUser,done:checked}); }
+  function addComment(i,text,img=null){ broadcast({type:"comment",index:i,user:currentUser,text,img}); }
+
+  function handleData(d){
+    if(d.type==="init"){tasks=d.tasks;taskStatus=d.taskStatus;comments=d.comments;members=d.members||[];renderTasks();renderAssignSelect();}
+    if(d.type==="join"){members.push({name:d.user,role:d.role});renderAssignSelect();broadcast({type:"members",members});}
+    if(d.type==="members"){members=d.members;renderAssignSelect();}
+    if(d.type==="task"){tasks=d.tasks;taskStatus=d.taskStatus||{};comments=d.comments||{};renderTasks();}
+    if(d.type==="check"){if(!taskStatus[d.index]) taskStatus[d.index]={}; taskStatus[d.index][d.user]=d.done; renderTasks();}
+    if(d.type==="comment"){if(!comments[d.index]) comments[d.index]=[]; comments[d.index].push({user:d.user,text:d.text,img:d.img}); renderTasks();}
+  }
+
+  function broadcast(d){connections.forEach(c=>c.send(d)); handleData(d);}
+
+  function renderTasks(){
+    taskList.innerHTML="";
+    tasks.forEach((t,i)=>{
+      const div=document.createElement("div"); div.className="task";
+      let selesai=false;
+      if(taskStatus[i]){
+        const users=Object.keys(taskStatus[i]);
+        if(users.length>0 && users.every(u=>taskStatus[i][u]===true)) selesai=true;
+      }
+      if(selesai) div.style.background="#d1fae5";
+
+      const header=document.createElement("div"); header.className="task-header";
+      header.innerHTML=`<b>${t.text}</b>`; div.appendChild(header);
+      header.onclick=()=>{div.classList.toggle("open"); renderTasks();};
+
+      if(div.classList.contains("open")){
+        if(currentRole==="member"){
+          if(t.assigned.includes(currentUser)){
+            const chk=document.createElement("input"); chk.type="checkbox";
+            chk.onchange=()=>toggleCheck(i,chk.checked);
+            if(taskStatus[i]&&taskStatus[i][currentUser]) chk.checked=taskStatus[i][currentUser];
+            div.appendChild(chk);
+
+            const comBox=document.createElement("div"); comBox.className="comment-box";
+            comBox.innerHTML=`<input placeholder="Komentar..." id="cmt${i}"><input type="file" id="img${i}"><button onclick="sendComment(${i})">Kirim</button>`;
+            div.appendChild(comBox);
+          }
+        } else {
+          let status=""; 
+          if(taskStatus[i]){
+            const total=t.assigned.length; 
+            const selesai=Object.keys(taskStatus[i]).filter(u=>taskStatus[i][u]).length;
+            status=`${selesai}/${total} selesai`; 
+            if(total>0&&selesai===total) status="✅ Semua selesai";
+          }
+          const st=document.createElement("div"); st.className="member-status"; st.textContent=status; div.appendChild(st);
+          const del=document.createElement("button"); del.textContent="❌ Hapus"; del.onclick=()=>deleteTask(i); div.appendChild(del);
+        }
+
+        if(comments[i]) comments[i].forEach(c=>{
+          const cm=document.createElement("div"); cm.className="comment";
+          cm.innerHTML=`<b>${c.user}:</b> ${c.text||""}`;
+          if(c.img){const im=document.createElement("img"); im.src=c.img; cm.appendChild(im);}
+          div.appendChild(cm);
+        });
+      }
+      taskList.appendChild(div);
+    });
+  }
+
+  function sendComment(i){
+    const text=document.getElementById("cmt"+i).value;
+    const file=document.getElementById("img"+i).files[0];
+    if(file){const reader=new FileReader(); reader.onload=()=>{addComment(i,text,reader.result);}; reader.readAsDataURL(file);}
+    else addComment(i,text);
+    document.getElementById("cmt"+i).value=""; document.getElementById("img"+i).value="";
+  }
+</script>
+</body>
+</html>
